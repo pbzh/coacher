@@ -74,7 +74,12 @@ def _resolve_provider(task: TaskClass) -> Provider:
     return _env_provider_for(task)
 
 
-def build_model(provider: Provider, api_key: str | None = None) -> Model:
+def build_model(
+    provider: Provider,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model_name: str | None = None,
+) -> Model:
     """Construct a PydanticAI Model for ``provider``.
 
     ``api_key`` is required for cloud providers and optional for local.
@@ -99,9 +104,9 @@ def build_model(provider: Provider, api_key: str | None = None) -> Model:
 
     # Local llama.cpp / Ollama via OpenAI-compatible endpoint
     return OpenAIModel(
-            model_name=get_effective_local_model(),
+            model_name=model_name or get_effective_local_model(),
             provider=OpenAIProvider(
-                base_url=settings.local_llm_base_url,
+                base_url=base_url or settings.local_llm_base_url,
                 api_key=api_key or settings.local_llm_api_key,
             ),
     )

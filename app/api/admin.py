@@ -1,8 +1,12 @@
 """Admin endpoints for user approval and role management."""
 
 import asyncio
+import re
+import subprocess
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated
+from urllib.parse import quote, unquote, urlparse
 from uuid import UUID
 
 import structlog
@@ -475,3 +479,142 @@ async def list_login_attempts(
         )
         for row in rows
     ]
+
+
+# ── Database configuration ───────────────────────────────────────────────────
+
+_ENV_FILE = Path(__file__).parent.parent.parent / ".env"
+
+
+class DbConfigRead(BaseModel):
+    host: str
+    port: int
+    database: str
+    username: str
+    has_password: bool
+
+
+class DbConfigUpdate(BaseModel):
+    host: str = Field(min_length=1, max_length=253)
+    port: int = Field(ge=1, le=65535, default=5432)
+    database: str = Field(min_length=1, max_length=63)
+    username: str = Field(min_length=1, max_length=63)
+    password: str = ""   # blank = keep existing password from .env
+
+
+class DbTestRequest(BaseModel):
+    host: str = Field(min_length=1, max_length=253)
+    port: int = Field(ge=1, le=65535, default=5432)
+    database: str = Field(min_length=1, max_length=63)
+    username: str = Field(min_length=1, max_length=63)
+    password: str = ""
+
+
+def _parse_db_url(url: str) -> dict:
+    clean = url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    p = urlparse(clean)
+    return {
+        "host": p.hostname or "",
+        "port": p.port or 5432,
+        "database": (p.path or "/").lstrip("/"),
+        "username": unquote(p.username or ""),
+        "password": unquote(p.password or ""),
+    }
+
+
+def _build_db_url(host: str, port: int, database: str, username: str, password: str) -> str:
+    return (
+        f"postgresql+asyncpg://{quote(username, safe='')}:{quote(password, safe='')}"
+        f"@{host}:{port}/{database}"
+    )
+
+
+def _write_env_db_url(new_url: str) -> None:
+    content = _ENV_FILE.read_text() if _ENV_FILE.exists() else ""
+    replacement = f"DATABASE_URL={new_url}"
+    if re.search(r"^DATABASE_URL=.*$", content, re.MULTILINE):
+        content = re.sub(r"^DATABASE_URL=.*$", replacement, content, flags=re.MULTILINE)
+    else:
+        content = content.rstrip("\n") + f"\n{replacement}\n"
+    _ENV_FILE.write_text(content)
+
+
+async def _probe_connection(url: str) -> tuple[bool, str]:
+    from sqlalchemy.ext.asyncio import create_async_engine
+    try:
+        engine = create_async_engine(url, connect_args={"timeout": 5})
+        async with engine.connect() as conn:
+            row = await conn.execute(text("SELECT version()"))
+            version = row.scalar() or ""
+        await engine.dispose()
+        return True, version
+    except Exception as exc:
+        return False, str(exc)
+
+
+@router.get("/db-config", response_model=DbConfigRead)
+async def get_db_config(
+    _: Annotated[User, Depends(get_current_admin_user)],
+) -> DbConfigRead:
+    from app.config import get_settings
+    parsed = _parse_db_url(get_settings().database_url)
+    return DbConfigRead(
+        host=parsed["host"],
+        port=parsed["port"],
+        database=parsed["database"],
+        username=parsed["username"],
+        has_password=bool(parsed["password"]),
+    )
+
+
+@router.post("/db-config/test", status_code=200)
+async def test_db_config(
+    body: DbTestRequest,
+    _: Annotated[User, Depends(get_current_admin_user)],
+) -> dict:
+    url = _build_db_url(body.host, body.port, body.database, body.username, body.password)
+    ok, detail = await _probe_connection(url)
+    return {"ok": ok, "detail": detail}
+
+
+@router.put("/db-config", status_code=200)
+async def put_db_config(
+    body: DbConfigUpdate,
+    _: Annotated[User, Depends(get_current_admin_user)],
+) -> DbConfigRead:
+    from app.config import get_settings
+    password = body.password
+    if not password:
+        # Retain existing password from .env when left blank
+        existing = _parse_db_url(get_settings().database_url)
+        password = existing["password"]
+
+    url = _build_db_url(body.host, body.port, body.database, body.username, password)
+    ok, detail = await _probe_connection(url)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Connection test failed: {detail}",
+        )
+    _write_env_db_url(url)
+    return DbConfigRead(
+        host=body.host,
+        port=body.port,
+        database=body.database,
+        username=body.username,
+        has_password=bool(password),
+    )
+
+
+@router.post("/restart", status_code=200)
+async def restart_service(
+    _: Annotated[User, Depends(get_current_admin_user)],
+) -> dict:
+    async def _do_restart() -> None:
+        await asyncio.sleep(0.6)
+        subprocess.Popen(["systemctl", "restart", "coacher"])
+
+    t = asyncio.create_task(_do_restart())
+    _background_tasks.add(t)
+    t.add_done_callback(_background_tasks.discard)
+    return {"ok": True}

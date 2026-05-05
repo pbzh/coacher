@@ -33,6 +33,8 @@ async def classify_turn(
     boss_provider: Provider | None = None,
     prompt_override: str | None = None,
     api_key: str | None = None,
+    base_url: str | None = None,
+    model_name: str | None = None,
 ) -> TaskClass:
     """Return the best dispatchable task for this turn.
 
@@ -44,7 +46,7 @@ async def classify_turn(
     if boss_provider is None:
         boss_provider = Provider.LOCAL
     from app.agent.router import build_model
-    model = build_model(boss_provider, api_key=api_key)
+    model = build_model(boss_provider, api_key=api_key, base_url=base_url, model_name=model_name)
     classifier: Agent[None, str] = Agent(
         model=model,
         output_type=cast(Any, _LITERAL),

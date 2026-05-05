@@ -113,6 +113,11 @@ class UserProfile(SQLModel, table=True):
     # provider names: "anthropic" | "openai" | "local". Cloud keys are
     # user-scoped; the local provider may still use deployment config.
     api_keys_enc: dict[str, str] | None = Field(default=None, sa_type=JSONB)
+    # Optional per-user OpenAI-compatible endpoint override for the local
+    # provider. Missing value falls back to settings.local_llm_base_url.
+    local_llm_base_url: str | None = None
+    # Per-user model name override for the local provider.
+    local_llm_model: str | None = None
     # Privacy + i18n knobs.
     local_only: bool = False
     chat_retention_days: int | None = None  # None = keep forever

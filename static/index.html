@@ -1572,6 +1572,7 @@
                 <button class="settings-nav-btn" type="button" data-settings-target="security" data-i18n="settings.security">Security</button>
                 <button class="settings-nav-btn" type="button" data-settings-target="body" data-i18n="settings.body">Body metrics</button>
                 <button class="settings-nav-btn" type="button" data-settings-target="coaches" data-i18n="settings.coaches">Coaches & API keys</button>
+                <button class="settings-nav-btn" type="button" data-settings-target="local-llm">Local LLM</button>
                 <button class="settings-nav-btn" type="button" data-settings-target="calendar" data-i18n="settings.calendar">Calendar export</button>
                 <button class="settings-nav-btn" type="button" data-settings-target="appearance" data-i18n="settings.appearance">Appearance</button>
                 <button class="settings-nav-btn" type="button" data-settings-target="developer" data-i18n="settings.developer">Developer</button>
@@ -1833,6 +1834,55 @@
                 </div>
             </div>
 
+            <!-- Local LLM -->
+            <div class="settings-card" data-settings-section="local-llm">
+                <div class="card-header">
+                    <h3>Local LLM</h3>
+                    <p>Configure and test the local OpenAI-compatible endpoint. Endpoint and API key override the deployment defaults and are saved per-user.</p>
+                </div>
+                <div class="card-body">
+                    <div class="llm-section-head">Endpoint</div>
+                    <div class="llm-key-row">
+                        <div class="label">Base URL</div>
+                        <input id="local-llm-base-url" type="url" autocomplete="off" spellcheck="false" placeholder="loading…">
+                        <span class="llm-key-status" id="local-llm-base-url-status"></span>
+                    </div>
+                    <div class="llm-key-row">
+                        <div class="label">API key</div>
+                        <input id="local-llm-api-key" type="password" autocomplete="new-password" placeholder="Not set">
+                        <span class="llm-key-status" id="local-llm-api-key-status"></span>
+                    </div>
+                    <div class="hint">Type <code>clear</code> in the URL field to revert to the deployment default. Type <code>clear</code> in the key field to remove the stored key.</div>
+
+                    <div class="llm-section-head" style="margin-top:18px;">Connection test</div>
+                    <div id="llm-probe-result" style="display:none;margin-bottom:8px;">
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                            <span id="llm-probe-dot" style="width:10px;height:10px;border-radius:50%;background:var(--border);flex-shrink:0;"></span>
+                            <span id="llm-probe-summary" style="font-size:0.86rem;color:var(--text-2);"></span>
+                        </div>
+                        <div id="llm-probe-props" style="font-size:0.8rem;color:var(--text-2);display:none;margin-bottom:10px;">
+                            <div style="font-weight:600;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;font-size:.72rem;">Server info</div>
+                            <div id="llm-probe-props-body" style="display:grid;grid-template-columns:auto 1fr;gap:3px 12px;"></div>
+                        </div>
+                    </div>
+
+                    <div class="llm-section-head" style="margin-top:18px;">Active model</div>
+                    <div class="llm-key-row">
+                        <div class="label">Model</div>
+                        <select id="local-llm-model-select" style="flex:1;height:36px;padding:0 10px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text-1);font-size:0.85rem;">
+                            <option value="">Default (.env)</option>
+                        </select>
+                        <span class="llm-key-status" id="local-llm-model-status"></span>
+                    </div>
+                    <div class="hint">Select a model loaded on the server. "Default (.env)" uses the deployment setting. Click "Test connection" to refresh the model list.</div>
+                </div>
+                <div class="card-footer" style="flex-wrap:wrap;gap:10px;">
+                    <button class="btn-save" id="local-llm-save-btn" type="button">Save</button>
+                    <button class="text-btn" id="llm-probe-btn" type="button" style="height:36px;padding:0 14px;">Test connection</button>
+                    <span class="status" id="llm-probe-status"></span>
+                </div>
+            </div>
+
             <div class="settings-card" data-settings-section="calendar">
                 <div class="card-header">
                     <h3 data-i18n="settings.calendar">Calendar export</h3>
@@ -2043,6 +2093,44 @@
                         <button class="text-btn" id="admin-smtp-test-btn" type="button" style="height:36px;padding:0 14px;white-space:nowrap;">Send test</button>
                     </div>
                     <span class="status" id="smtp-status"></span>
+                </div>
+            </div>
+
+            <!-- PostgreSQL server config -->
+            <div class="settings-card" style="margin-top:20px;">
+                <div class="card-header">
+                    <h3>PostgreSQL server</h3>
+                    <p>Database connection written to <code>.env</code>. Changes take effect after restart. Leave password blank to keep the current value.</p>
+                </div>
+                <div class="card-body">
+                    <div class="settings-grid">
+                        <div class="field" style="flex:2;min-width:160px;">
+                            <label for="db-host">Host</label>
+                            <input id="db-host" type="text" placeholder="10.1.10.10" autocomplete="off">
+                        </div>
+                        <div class="field" style="flex:0 0 100px;">
+                            <label for="db-port">Port</label>
+                            <input id="db-port" type="number" min="1" max="65535" placeholder="5432">
+                        </div>
+                        <div class="field">
+                            <label for="db-name">Database</label>
+                            <input id="db-name" type="text" placeholder="fitness" autocomplete="off">
+                        </div>
+                        <div class="field">
+                            <label for="db-user">Username</label>
+                            <input id="db-user" type="text" autocomplete="off" placeholder="fitness">
+                        </div>
+                        <div class="field">
+                            <label for="db-pass">Password</label>
+                            <input id="db-pass" type="password" autocomplete="new-password" placeholder="leave blank to keep current">
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer" style="flex-wrap:wrap;gap:10px;">
+                    <button class="btn-save" id="admin-db-save-btn" type="button">Save &amp; test</button>
+                    <button class="text-btn" id="admin-db-test-btn" type="button" style="height:36px;padding:0 14px;">Test only</button>
+                    <button class="text-btn" id="admin-db-restart-btn" type="button" style="height:36px;padding:0 14px;">Restart service</button>
+                    <span class="status" id="db-status"></span>
                 </div>
             </div>
 
@@ -2794,6 +2882,7 @@
         } else if (viewId === "admin-view") {
             renderAdminUsers();
             loadSmtpConfig();
+            loadDbConfig();
         } else if (viewId === "app-view") {
             loadDashboard();
         }
@@ -2804,6 +2893,7 @@
         security: ["settings.security", "settings.securitySectionSubtitle"],
         body: ["settings.body", "settings.bodySectionSubtitle"],
         coaches: ["settings.coaches", "settings.coachesSectionSubtitle"],
+        "local-llm": ["settings.localLlm", "settings.localLlmSubtitle"],
         calendar: ["settings.calendar", "settings.calendarSectionSubtitle"],
         appearance: ["settings.appearance", "settings.appearanceSectionSubtitle"],
         developer: ["settings.developer", "settings.developerSectionSubtitle"],
@@ -2822,7 +2912,10 @@
     }
 
     document.querySelectorAll("[data-settings-target]").forEach(btn =>
-        btn.addEventListener("click", () => switchSettingsSection(btn.dataset.settingsTarget))
+        btn.addEventListener("click", () => {
+            switchSettingsSection(btn.dataset.settingsTarget);
+            if (btn.dataset.settingsTarget === "local-llm") loadLocalLlmSection();
+        })
     );
     document.querySelectorAll("[data-settings-cancel]").forEach(btn =>
         btn.addEventListener("click", () => loadProfile())
@@ -3736,7 +3829,6 @@
         const keyRows = [
             { provider: "anthropic", label: "Anthropic" },
             { provider: "openai",    label: "OpenAI" },
-            { provider: "local",     label: "Local LLM" },
         ];
         for (const k of keyRows) {
             const row = document.createElement("div");
@@ -3767,7 +3859,7 @@
         // Per-provider clear button
         const clearRow = document.createElement("div");
         clearRow.className = "hint";
-        clearRow.textContent = "Tip: type 'clear' (literally those 5 letters) and Save to remove a stored DB key for that provider.";
+        clearRow.textContent = "Tip: type 'clear' in a key field to remove the stored DB key for that provider.";
         body.appendChild(clearRow);
     }
 
@@ -3782,7 +3874,7 @@
             if (sel) payload.coach_providers[c.task] = sel.value;  // "" = clear
         }
 
-        for (const provider of ["anthropic", "openai", "local"]) {
+        for (const provider of ["anthropic", "openai"]) {
             const input = $(`llm-key-${provider}`);
             if (!input) continue;
             const v = input.value;
@@ -4662,6 +4754,247 @@
             flashStatus("smtp-status", e.message || "Test failed", "error");
         }
     });
+
+    /* ── DB config ── */
+    async function loadDbConfig() {
+        try {
+            const res = await request("/admin/db-config", { headers: authHeaders() });
+            if (!res.ok) return;
+            const cfg = await res.json();
+            $("db-host").value = cfg.host || "";
+            $("db-port").value = cfg.port || 5432;
+            $("db-name").value = cfg.database || "";
+            $("db-user").value = cfg.username || "";
+            if (cfg.has_password) $("db-pass").placeholder = "••••••••  (set — leave blank to keep)";
+        } catch { /* not admin */ }
+    }
+
+    function _dbPayload() {
+        return {
+            host: $("db-host").value.trim(),
+            port: parseInt($("db-port").value) || 5432,
+            database: $("db-name").value.trim(),
+            username: $("db-user").value.trim(),
+            password: $("db-pass").value,
+        };
+    }
+
+    $("admin-db-test-btn")?.addEventListener("click", async () => {
+        const body = _dbPayload();
+        if (!body.host || !body.database || !body.username) {
+            flashStatus("db-status", "Fill host, database, and username", "error"); return;
+        }
+        try {
+            flashStatus("db-status", "Testing…", "");
+            const res = await request("/admin/db-config/test", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Test failed");
+            flashStatus("db-status", data.ok ? `OK — ${data.detail.split(" on ")[0]}` : `Failed: ${data.detail}`, data.ok ? "success" : "error");
+        } catch (e) {
+            flashStatus("db-status", e.message || "Test failed", "error");
+        }
+    });
+
+    $("admin-db-save-btn")?.addEventListener("click", async () => {
+        const body = _dbPayload();
+        if (!body.host || !body.database || !body.username) {
+            flashStatus("db-status", "Fill host, database, and username", "error"); return;
+        }
+        try {
+            flashStatus("db-status", "Testing & saving…", "");
+            const res = await request("/admin/db-config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(body) });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Save failed");
+            $("db-pass").value = "";
+            $("db-pass").placeholder = "••••••••  (set — leave blank to keep)";
+            flashStatus("db-status", "Saved — restart service to apply", "success");
+        } catch (e) {
+            flashStatus("db-status", e.message || "Save failed", "error");
+        }
+    });
+
+    $("admin-db-restart-btn")?.addEventListener("click", async () => {
+        if (!confirm("Restart the coacher service now? The page will briefly disconnect.")) return;
+        try {
+            await request("/admin/restart", { method: "POST", headers: authHeaders() });
+            flashStatus("db-status", "Restarting… reconnecting in 5s", "");
+            await new Promise(r => setTimeout(r, 5000));
+            window.location.reload();
+        } catch {
+            flashStatus("db-status", "Restart signal sent", "success");
+            await new Promise(r => setTimeout(r, 5000));
+            window.location.reload();
+        }
+    });
+
+    /* ── Local LLM ── */
+    let _localLlmCfg = null;   // cached /profile/llm snapshot for this section
+
+    function _populateModelSelect(models, currentModel, defaultModel) {
+        const sel = $("local-llm-model-select");
+        if (!sel) return;
+        const prev = sel.value;
+        sel.replaceChildren();
+        const defOpt = document.createElement("option");
+        defOpt.value = "";
+        defOpt.textContent = `Default (.env) — ${defaultModel || "unknown"}`;
+        sel.appendChild(defOpt);
+        for (const m of models) {
+            const opt = document.createElement("option");
+            opt.value = m;
+            opt.textContent = m;
+            sel.appendChild(opt);
+        }
+        // Re-select: prefer currentModel, then prev, then ""
+        sel.value = currentModel || prev || "";
+        const statusEl = $("local-llm-model-status");
+        if (statusEl) {
+            statusEl.textContent = currentModel ? "DB" : ".env";
+            statusEl.className = "llm-key-status" + (currentModel ? " set" : "");
+        }
+    }
+
+    async function loadLocalLlmSection() {
+        try {
+            const res = await request("/profile/llm", { headers: authHeaders() });
+            if (!res.ok) return;
+            const cfg = await res.json();
+            _localLlmCfg = cfg;
+
+            const urlEl = $("local-llm-base-url");
+            if (urlEl) {
+                urlEl.value = cfg.local_base_url || "";
+                urlEl.placeholder = cfg.default_local_base_url || "http://localhost:8080/v1";
+            }
+            const urlStatus = $("local-llm-base-url-status");
+            if (urlStatus) {
+                urlStatus.textContent = cfg.local_base_url ? "DB" : ".env";
+                urlStatus.className = "llm-key-status" + (cfg.local_base_url ? " set" : "");
+            }
+            const keyEl = $("local-llm-api-key");
+            if (keyEl) {
+                keyEl.placeholder = cfg.api_keys_set?.local ? "•••••••• (set — leave blank to keep)" : "Not set";
+            }
+            const keyStatus = $("local-llm-api-key-status");
+            if (keyStatus) {
+                keyStatus.textContent = cfg.api_keys_set?.local ? "DB" : "unset";
+                keyStatus.className = "llm-key-status" + (cfg.api_keys_set?.local ? " set" : "");
+            }
+            _populateModelSelect([], cfg.local_model, cfg.default_local_model);
+        } catch { /* not signed in */ }
+    }
+
+    async function runLlmProbe() {
+        const btn = $("llm-probe-btn");
+        if (btn) btn.disabled = true;
+        flashStatus("llm-probe-status", "Probing…", "");
+
+        try {
+            const res = await request("/profile/llm/probe", { headers: authHeaders() });
+            const d = await res.json();
+            if (!res.ok) throw new Error(d.detail || "Probe failed");
+
+            const resultEl = $("llm-probe-result");
+            const dotEl = $("llm-probe-dot");
+            const summaryEl = $("llm-probe-summary");
+            const propsEl = $("llm-probe-props");
+            const propsBody = $("llm-probe-props-body");
+
+            if (resultEl) resultEl.style.display = "";
+
+            if (d.ok) {
+                if (dotEl) dotEl.style.background = "var(--success, #22c55e)";
+                if (summaryEl) summaryEl.textContent = `Connected · ${d.latency_ms != null ? d.latency_ms + " ms" : ""}`;
+                flashStatus("llm-probe-status", "OK", "success");
+            } else {
+                if (dotEl) dotEl.style.background = "var(--error, #ef4444)";
+                if (summaryEl) summaryEl.textContent = d.error || "Unreachable";
+                flashStatus("llm-probe-status", d.error || "Failed", "error");
+            }
+
+            // Populate model selector with live list
+            const currentModel = _localLlmCfg?.local_model || null;
+            const defaultModel = _localLlmCfg?.default_local_model || "";
+            _populateModelSelect(d.models || [], currentModel, defaultModel);
+
+            if (d.props && Object.keys(d.props).length) {
+                if (propsEl) propsEl.style.display = "";
+                if (propsBody) {
+                    propsBody.innerHTML = "";
+                    const labels = { model_path: "Model path", context_length: "Context length", max_tokens: "Max tokens" };
+                    for (const [k, v] of Object.entries(d.props)) {
+                        const lbl = document.createElement("span");
+                        lbl.style.cssText = "color:var(--text-2);white-space:nowrap;";
+                        lbl.textContent = labels[k] || k;
+                        const val = document.createElement("span");
+                        val.style.cssText = "font-family:var(--font-mono,monospace);word-break:break-all;";
+                        val.textContent = String(v);
+                        propsBody.append(lbl, val);
+                    }
+                }
+            } else if (propsEl) {
+                propsEl.style.display = "none";
+            }
+        } catch (e) {
+            flashStatus("llm-probe-status", e.message || "Probe failed", "error");
+            const resultEl = $("llm-probe-result");
+            if (resultEl) {
+                resultEl.style.display = "";
+                const dotEl = $("llm-probe-dot");
+                const summaryEl = $("llm-probe-summary");
+                if (dotEl) dotEl.style.background = "var(--error, #ef4444)";
+                if (summaryEl) summaryEl.textContent = e.message || "Error";
+            }
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    async function saveLocalLlmSection() {
+        const btn = $("local-llm-save-btn");
+        if (btn) btn.disabled = true;
+        flashStatus("llm-probe-status", "Saving…", "");
+
+        const payload = {};
+
+        const urlEl = $("local-llm-base-url");
+        if (urlEl) {
+            const v = urlEl.value.trim();
+            if (v.toLowerCase() === "clear") payload.local_base_url = "";
+            else if (v !== "") payload.local_base_url = v;
+        }
+
+        const keyEl = $("local-llm-api-key");
+        if (keyEl && keyEl.value !== "") {
+            const v = keyEl.value;
+            payload.api_keys = { local: v.toLowerCase() === "clear" ? "" : v };
+        }
+
+        const selEl = $("local-llm-model-select");
+        if (selEl) {
+            payload.local_model = selEl.value;  // "" = clear override → use default
+        }
+
+        try {
+            const res = await request("/profile/llm", { method: "PUT", headers: authHeaders(), body: JSON.stringify(payload) });
+            const cfg = await res.json();
+            if (!res.ok) throw new Error(cfg.detail || "Save failed");
+            _localLlmCfg = cfg;
+            if (keyEl) { keyEl.value = ""; keyEl.placeholder = cfg.api_keys_set?.local ? "•••••••• (set — leave blank to keep)" : "Not set"; }
+            const urlStatus = $("local-llm-base-url-status");
+            if (urlStatus) { urlStatus.textContent = cfg.local_base_url ? "DB" : ".env"; urlStatus.className = "llm-key-status" + (cfg.local_base_url ? " set" : ""); }
+            const modelStatus = $("local-llm-model-status");
+            if (modelStatus) { modelStatus.textContent = cfg.local_model ? "DB" : ".env"; modelStatus.className = "llm-key-status" + (cfg.local_model ? " set" : ""); }
+            flashStatus("llm-probe-status", "Saved", "success");
+        } catch (e) {
+            flashStatus("llm-probe-status", e.message || "Save failed", "error");
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    $("llm-probe-btn")?.addEventListener("click", runLlmProbe);
+    $("local-llm-save-btn")?.addEventListener("click", saveLocalLlmSection);
 
     /* ── Chat ── */
     function renderAttachments(container, attachments) {

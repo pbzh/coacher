@@ -19,7 +19,12 @@ from sqlmodel import select
 
 from app.agent.agent import AgentDeps
 from app.agent.attachments import build_part, has_image
-from app.agent.effective_config import load_effective_config, resolve_api_key
+from app.agent.effective_config import (
+    load_effective_config,
+    resolve_api_key,
+    resolve_base_url,
+    resolve_local_model,
+)
 from app.agent.manager import classify_turn
 from app.agent.prompts import resolve_prompt
 from app.agent.router import Provider, TaskClass, _env_provider_for, build_model
@@ -123,10 +128,7 @@ def _is_retryable(exc: Exception) -> bool:
     if status in _RETRYABLE_STATUSES:
         return True
     msg = str(exc).lower()
-    return any(
-        marker in msg
-        for marker in ("overloaded", "503", "502", "504", "529", "rate limit")
-    )
+    return any(marker in msg for marker in ("overloaded", "503", "502", "504", "529", "rate limit"))
 
 
 @router.post("", response_model=ChatResponse)
@@ -142,12 +144,16 @@ async def chat(
     if req.attached_file_ids:
         async with AsyncSessionLocal() as session:
             rows = (
-                await session.execute(
-                    select(DBFile)
-                    .where(DBFile.id.in_(req.attached_file_ids))
-                    .where(DBFile.user_id == user_id)
+                (
+                    await session.execute(
+                        select(DBFile)
+                        .where(DBFile.id.in_(req.attached_file_ids))
+                        .where(DBFile.user_id == user_id)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         found_ids = {f.id for f in rows}
         missing_ids = [fid for fid in req.attached_file_ids if fid not in found_ids]
         if missing_ids:
@@ -186,15 +192,19 @@ async def chat(
         recent_user_msgs: list[str] = []
         async with AsyncSessionLocal() as session:
             recent = (
-                await session.execute(
-                    select(AgentMessage)
-                    .where(AgentMessage.user_id == user_id)
-                    .where(AgentMessage.conversation_id == convo_id)
-                    .where(AgentMessage.role == "user")
-                    .order_by(AgentMessage.created_at.desc())
-                    .limit(3)
+                (
+                    await session.execute(
+                        select(AgentMessage)
+                        .where(AgentMessage.user_id == user_id)
+                        .where(AgentMessage.conversation_id == convo_id)
+                        .where(AgentMessage.role == "user")
+                        .order_by(AgentMessage.created_at.desc())
+                        .limit(3)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             recent_user_msgs = [m.content for m in reversed(recent)]
         default_boss = _env_provider_for(TaskClass.AUTO)
         boss_provider = eff.provider_for("auto", default_boss)
@@ -214,6 +224,8 @@ async def chat(
             boss_provider=boss_provider,
             prompt_override=boss_prompt or None,
             api_key=boss_api_key,
+            base_url=resolve_base_url(boss_provider, eff),
+            model_name=resolve_local_model(boss_provider, eff),
         )
     else:
         resolved_task = req.task_hint
@@ -272,7 +284,12 @@ async def chat(
             resolved_provider = Provider.ANTHROPIC
 
     api_key = resolve_api_key(resolved_provider, eff)
-    model = build_model(resolved_provider, api_key=api_key)
+    model = build_model(
+        resolved_provider,
+        api_key=api_key,
+        base_url=resolve_base_url(resolved_provider, eff),
+        model_name=resolve_local_model(resolved_provider, eff),
+    )
 
     # Append a language directive so the agent answers in the user's
     # preferred language (independent of any prompt overrides).
@@ -356,14 +373,18 @@ async def chat_history(
     convo_id = rolling_conversation_id(user_id)
     async with AsyncSessionLocal() as session:
         rows = (
-            await session.execute(
-                select(AgentMessage)
-                .where(AgentMessage.user_id == user_id)
-                .where(AgentMessage.conversation_id == convo_id)
-                .order_by(AgentMessage.created_at.desc())
-                .limit(limit)
+            (
+                await session.execute(
+                    select(AgentMessage)
+                    .where(AgentMessage.user_id == user_id)
+                    .where(AgentMessage.conversation_id == convo_id)
+                    .order_by(AgentMessage.created_at.desc())
+                    .limit(limit)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     rows.reverse()  # oldest → newest
 
@@ -373,12 +394,16 @@ async def chat_history(
     if file_ids:
         async with AsyncSessionLocal() as session:
             files = (
-                await session.execute(
-                    select(DBFile)
-                    .where(DBFile.id.in_([UUID(x) for x in file_ids]))
-                    .where(DBFile.user_id == user_id)
+                (
+                    await session.execute(
+                        select(DBFile)
+                        .where(DBFile.id.in_([UUID(x) for x in file_ids]))
+                        .where(DBFile.user_id == user_id)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         file_meta = {
             str(f.id): AttachmentRef(id=f.id, filename=f.filename, mime_type=f.mime_type)
             for f in files
@@ -394,9 +419,7 @@ async def chat_history(
             created_at=m.created_at.isoformat(),
             input_tokens=m.input_tokens,
             output_tokens=m.output_tokens,
-            attachments=[
-                file_meta[fid] for fid in (m.attached_file_ids or []) if fid in file_meta
-            ],
+            attachments=[file_meta[fid] for fid in (m.attached_file_ids or []) if fid in file_meta],
         )
         for m in rows
     ]
@@ -428,12 +451,16 @@ async def clear_history(user_id: Annotated[UUID, Depends(get_approved_user_id)])
     convo_id = rolling_conversation_id(user_id)
     async with AsyncSessionLocal() as session:
         rows = (
-            await session.execute(
-                select(AgentMessage)
-                .where(AgentMessage.user_id == user_id)
-                .where(AgentMessage.conversation_id == convo_id)
+            (
+                await session.execute(
+                    select(AgentMessage)
+                    .where(AgentMessage.user_id == user_id)
+                    .where(AgentMessage.conversation_id == convo_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for r in rows:
             await session.delete(r)
         await session.commit()

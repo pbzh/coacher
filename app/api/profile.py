@@ -134,6 +134,10 @@ class LLMConfigRead(BaseModel):
     env_providers: dict[str, str]      # task -> .env default (read-only)
     provider_models: dict[str, str]    # provider -> model name (for badge label)
     api_keys_set: dict[str, bool]      # provider -> "set in DB?"
+    local_base_url: str | None         # per-user local endpoint override
+    default_local_base_url: str        # deployment default from .env
+    local_model: str | None            # per-user model name override
+    default_local_model: str           # deployment default (probed or .env)
     local_only: bool                   # if true, every coach forced to local
     chat_retention_days: int | None    # null = keep forever
     preferred_language: str | None     # "en" | "de" | null=auto
@@ -144,9 +148,25 @@ class LLMConfigUpdate(BaseModel):
     coach_providers: dict[str, str] | None = None
     # provider -> plaintext API key. Empty string clears that key.
     api_keys: dict[str, str] | None = None
+    local_base_url: str | None = None
+    local_model: str | None = None     # "" clears the override
     local_only: bool | None = None
     chat_retention_days: int | None = Field(default=None, ge=0, le=3650)
     preferred_language: str | None = None  # "en"|"de"|"" (cleared)
+
+    @field_validator("local_base_url")
+    @classmethod
+    def validate_local_base_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if value == "":
+            return ""
+        if len(value) > 1024:
+            raise ValueError("local_base_url must be 1024 characters or fewer")
+        if not (value.startswith("http://") or value.startswith("https://")):
+            raise ValueError("local_base_url must start with http:// or https://")
+        return value.rstrip("/")
 
     @field_validator("preferred_language")
     @classmethod
@@ -343,6 +363,10 @@ def _llm_snapshot(profile: UserProfile | None) -> LLMConfigRead:
             "openai":    get_settings().openai_model,
         },
         api_keys_set={p: (p in enc) for p in _API_KEY_PROVIDERS},
+        local_base_url=profile.local_llm_base_url if profile else None,
+        default_local_base_url=get_settings().local_llm_base_url,
+        local_model=profile.local_llm_model if profile else None,
+        default_local_model=get_effective_local_model(),
         local_only=bool(profile.local_only) if profile else False,
         chat_retention_days=profile.chat_retention_days if profile else None,
         preferred_language=profile.preferred_language if profile else None,
@@ -396,6 +420,12 @@ async def update_llm_config(
                 else:
                     merged[provider] = encrypt(plaintext)
             profile.api_keys_enc = merged or None
+
+        if body.local_base_url is not None:
+            profile.local_llm_base_url = body.local_base_url or None
+
+        if body.local_model is not None:
+            profile.local_llm_model = body.local_model or None
 
         if body.local_only is not None:
             profile.local_only = body.local_only
@@ -515,3 +545,75 @@ async def update_profile(
         await session.commit()
         await session.refresh(profile)
         return profile
+
+
+# ── Local LLM probe ──────────────────────────────────────────────────────────
+
+class LocalLLMProbeResult(BaseModel):
+    ok: bool
+    base_url: str
+    latency_ms: float | None = None
+    models: list[str] = []
+    props: dict | None = None
+    error: str | None = None
+
+
+@router.get("/llm/probe", response_model=LocalLLMProbeResult)
+async def probe_local_llm(
+    user_id: Annotated[UUID, Depends(get_approved_user_id)],
+) -> LocalLLMProbeResult:
+    """Test connectivity to the effective local OpenAI-compatible endpoint."""
+    import time
+
+    import httpx
+
+    from app.agent.effective_config import load_effective_config, resolve_base_url
+    from app.agent.router import Provider
+
+    eff = await load_effective_config(user_id)
+    base_url = resolve_base_url(Provider.LOCAL, eff) or get_settings().local_llm_base_url
+    base_url = base_url.rstrip("/")
+
+    models: list[str] = []
+    props: dict | None = None
+    error: str | None = None
+    latency_ms: float | None = None
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            t0 = time.monotonic()
+            r = await client.get(f"{base_url}/v1/models")
+            latency_ms = round((time.monotonic() - t0) * 1000, 1)
+            r.raise_for_status()
+            data = r.json()
+            models = [m["id"] for m in data.get("data", []) if isinstance(m, dict)]
+
+            # llama.cpp extras (best-effort, non-fatal)
+            try:
+                rp = await client.get(f"{base_url}/props")
+                if rp.is_success:
+                    raw = rp.json()
+                    gen = raw.get("default_generation_settings", {})
+                    props = {}
+                    if "model" in gen:
+                        props["model_path"] = gen["model"]
+                    if "n_ctx" in gen:
+                        props["context_length"] = gen["n_ctx"]
+                    if "n_predict" in gen:
+                        props["max_tokens"] = gen["n_predict"]
+            except Exception:
+                pass
+
+    except httpx.HTTPStatusError as exc:
+        error = f"HTTP {exc.response.status_code}"
+    except Exception as exc:
+        error = str(exc) or type(exc).__name__
+
+    return LocalLLMProbeResult(
+        ok=error is None,
+        base_url=base_url,
+        latency_ms=latency_ms,
+        models=models,
+        props=props,
+        error=error,
+    )

@@ -26,6 +26,8 @@ log = structlog.get_logger()
 class EffectiveLLMConfig:
     coach_providers: dict[str, str] = field(default_factory=dict)
     api_keys: dict[str, str] = field(default_factory=dict)
+    local_base_url: str | None = None
+    local_model: str | None = None
 
     def provider_for(self, task: str, default: Provider) -> Provider:
         chosen = self.coach_providers.get(task)
@@ -54,6 +56,8 @@ async def load_effective_config(user_id: UUID) -> EffectiveLLMConfig:
         return cfg
 
     cfg.coach_providers = dict(profile.coach_providers or {})
+    cfg.local_base_url = profile.local_llm_base_url or None
+    cfg.local_model = profile.local_llm_model or None
 
     for provider_name, ciphertext in (profile.api_keys_enc or {}).items():
         plain = decrypt(ciphertext)
@@ -82,3 +86,17 @@ def resolve_api_key(provider: Provider, cfg: EffectiveLLMConfig) -> str | None:
     if provider == Provider.LOCAL:
         return settings.local_llm_api_key
     return None
+
+
+def resolve_base_url(provider: Provider, cfg: EffectiveLLMConfig) -> str | None:
+    """User base URL if present for the local provider, else deployment default."""
+    if provider != Provider.LOCAL:
+        return None
+    return cfg.local_base_url or get_settings().local_llm_base_url
+
+
+def resolve_local_model(provider: Provider, cfg: EffectiveLLMConfig) -> str | None:
+    """User model name if set for the local provider, else None (caller uses default)."""
+    if provider != Provider.LOCAL:
+        return None
+    return cfg.local_model or None

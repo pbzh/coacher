@@ -15,7 +15,12 @@ from sqlalchemy import text
 from sqlmodel import select
 
 from app.agent.agent import AgentDeps
-from app.agent.effective_config import load_effective_config, resolve_api_key
+from app.agent.effective_config import (
+    load_effective_config,
+    resolve_api_key,
+    resolve_base_url,
+    resolve_local_model,
+)
 from app.agent.prompts import resolve_prompt
 from app.agent.router import Provider, TaskClass, _env_provider_for, build_model
 from app.agent.tools import register_tools
@@ -49,8 +54,12 @@ Steps:
     week_end = next_monday + timedelta(days=7)
     async with AsyncSessionLocal() as session:
         users = (
-            await session.execute(select(User).where(User.is_approved == True))  # noqa: E712
-        ).scalars().all()
+            (
+                await session.execute(select(User).where(User.is_approved == True))  # noqa: E712
+            )
+            .scalars()
+            .all()
+        )
 
     for user in users:
         async with AsyncSessionLocal() as session:
@@ -71,7 +80,12 @@ Steps:
                 provider = Provider.LOCAL
 
         agent: Agent[AgentDeps, str] = Agent(
-            model=build_model(provider, api_key=resolve_api_key(provider, eff)),
+            model=build_model(
+                provider,
+                api_key=resolve_api_key(provider, eff),
+                base_url=resolve_base_url(provider, eff),
+                model_name=resolve_local_model(provider, eff),
+            ),
             deps_type=AgentDeps,
             system_prompt=resolve_prompt(
                 TaskClass.PLAN_GENERATION,
@@ -84,14 +98,18 @@ Steps:
         try:
             async with AsyncSessionLocal() as session:
                 stale = (
-                    await session.execute(
-                        select(WorkoutSession)
-                        .where(WorkoutSession.user_id == user.id)
-                        .where(WorkoutSession.scheduled_date >= next_monday)
-                        .where(WorkoutSession.scheduled_date < week_end)
-                        .where(WorkoutSession.completed == False)  # noqa: E712
+                    (
+                        await session.execute(
+                            select(WorkoutSession)
+                            .where(WorkoutSession.user_id == user.id)
+                            .where(WorkoutSession.scheduled_date >= next_monday)
+                            .where(WorkoutSession.scheduled_date < week_end)
+                            .where(WorkoutSession.completed == False)  # noqa: E712
+                        )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
                 for session_obj in stale:
                     await session.delete(session_obj)
                 await session.commit()
@@ -116,10 +134,14 @@ async def purge_old_chat_messages() -> None:
     """
     async with AsyncSessionLocal() as session:
         rows = (
-            await session.execute(
-                select(UserProfile).where(UserProfile.chat_retention_days.is_not(None))
+            (
+                await session.execute(
+                    select(UserProfile).where(UserProfile.chat_retention_days.is_not(None))
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         total_deleted = 0
         for profile in rows:
@@ -128,10 +150,7 @@ async def purge_old_chat_messages() -> None:
                 continue
             cutoff = datetime.utcnow() - timedelta(days=days)
             res = await session.execute(
-                text(
-                    "DELETE FROM agentmessage "
-                    "WHERE user_id = :u AND created_at < :c"
-                ),
+                text("DELETE FROM agentmessage WHERE user_id = :u AND created_at < :c"),
                 {"u": str(profile.user_id), "c": cutoff},
             )
             deleted = res.rowcount or 0
