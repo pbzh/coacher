@@ -47,7 +47,16 @@ You → "Build me a hangboard plan for tomorrow at 7am"
   Planner, Honest Coach, Compassionate Friend, Nutrition Strategist, Future Self)
   each with a unique color and icon. In auto mode the active role is inferred
   from message keywords; in manual mode you pin one. The active role shapes
-  the system prompt. Custom roles (up to 10 total) are supported.
+  the system prompt. Custom roles (up to 10 total) are supported. The chat view
+  serves as a dashboard: active role is shown as a hero card with a gradient
+  background, large avatar, description, challenge-level dots, and a visual
+  icon-grid switcher — no separate tab required for role selection.
+- **Per-user local LLM.** Each user can override the shared local LLM base URL
+  and model name in Settings → "Local LLM". Useful when multiple users share
+  one instance but run different local models or endpoints.
+- **Admin panel.** Admin users get an extra "Admin" tab with a live PostgreSQL
+  connection editor (test connection + apply without restart), user management
+  and approval controls, and service restart.
 - **Auto-generated weekly plans.** APScheduler runs every Sunday 19:00.
 - **Single-user, multi-user-ready.** `user_id` is on every table.
   Auth is real JWT with bcrypt; users can self-register.
@@ -183,7 +192,11 @@ coacher/
 │                            0004 user provider/key overrides,
 │                            0005 local-only/retention/language,
 │                            0006 user approval/admin, 0007 audit log,
-│                            0008 inner team
+│                            0008 inner team, 0009 login-attempts/smtp,
+│                            0010 nullable audit target,
+│                            0011 normalize null api keys,
+│                            0012 user local LLM base URL,
+│                            0013 user local LLM model
 ├── static/index.html        web UI (vanilla JS, no build step)
 ├── pyproject.toml
 ├── .env.example
@@ -351,8 +364,9 @@ local storage. API clients pass the token as `Authorization: Bearer <token>`.
 | POST | `/auth/change-password` | bearer required |
 | GET  | `/profile` | full profile read |
 | PUT  | `/profile` | merge-update; `coach_prompts` empty-string clears |
-| GET  | `/profile/llm` | provider overrides + `set/unset` key state |
-| PUT  | `/profile/llm` | merge-update; empty-string clears |
+| GET  | `/profile/llm` | provider overrides, per-user local LLM URL/model, `set/unset` key state |
+| PUT  | `/profile/llm` | merge-update; empty-string clears; includes `local_base_url` + `local_model` |
+| POST | `/profile/llm/probe-local` | test the user's configured local LLM endpoint |
 | GET  | `/profile/coach-prompts/defaults` | built-in defaults for each coach |
 | POST | `/chat` | `task_hint` defaults to `auto` (Boss picks) |
 | GET  | `/chat/history` | rolling thread, oldest → newest |
@@ -366,6 +380,10 @@ local storage. API clients pass the token as `Authorization: Bearer <token>`.
 | GET  | `/calendar/upcoming.ics?days=30` | rolling combined feed |
 | GET  | `/profile/export.zip` | GDPR Art. 15+20 export — data.json + files |
 | DELETE | `/profile/account` | GDPR Art. 17 erasure (requires password + email confirm) |
+| GET  | `/admin/users` | list all users (admin only) |
+| PATCH | `/admin/users/{id}` | approve / set admin flag (admin only) |
+| GET  | `/admin/db-config` | read current DB connection string (admin only) |
+| PUT  | `/admin/db-config` | update DB URL + test + restart (admin only) |
 | GET  | `/healthz` | liveness probe |
 
 ## Smoke testing
@@ -518,7 +536,15 @@ through the same endpoints.
 - [x] Per-user prompt overrides
 - [x] Per-user provider overrides + encrypted API keys
 - [x] Inner Team — 7 built-in roles with auto keyword detection, manual pin,
-      custom roles; per-role color + SVG icon identity in the web UI
+      custom roles; per-role color + icon; hero dashboard card with icon-grid
+      role switcher, description, challenge-level dots
+- [x] Per-user local LLM overrides (base URL + model, stored in DB)
+- [x] Admin panel — live Postgres connection editor, user management, service restart
+- [x] Markdown rendering in agent messages (headings, bold/italic, code blocks,
+      lists, inline code, links)
+- [x] Coach-colored message avatars (distinct color per specialist)
+- [x] Premium UI redesign — Instrument Sans body font, frosted glass topbar,
+      10 px rounded corners, gradient buttons, ambient glow backgrounds
 - [ ] Open Food Facts / USDA FDC nutrition lookup tools
 - [ ] wger exercise database integration
 - [ ] Garmin Connect ingestion service
