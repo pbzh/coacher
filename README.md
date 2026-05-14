@@ -48,18 +48,30 @@ You → "Build me a hangboard plan for tomorrow at 7am"
   each with a unique color and icon. In auto mode the active role is inferred
   from message keywords; in manual mode you pin one. The active role shapes
   the system prompt. Custom roles (up to 10 total) are supported. The chat view
-  serves as a dashboard: active role is shown as a hero card with a gradient
-  background, large avatar, description, challenge-level dots, and a visual
-  icon-grid switcher — no separate tab required for role selection.
+  serves as a dashboard: active role is shown as a hero stage card with role
+  color, large avatar, description, challenge-level dots, and an archetype picker
+  row — select a sub-archetype (e.g. "Powerlifter", "Endurance") to further
+  specialise the active role's prompt. No separate tab required.
 - **Per-user local LLM.** Each user can override the shared local LLM base URL
   and model name in Settings → "Local LLM". Useful when multiple users share
   one instance but run different local models or endpoints.
-- **Admin panel.** Admin users get an extra "Admin" tab with a live PostgreSQL
-  connection editor (test connection + apply without restart), user management
-  and approval controls, and service restart.
+- **Admin panel.** Admin users get an extra "Admin" tab with:
+  - Live PostgreSQL connection editor (test + apply without restart).
+  - User management: approve, revoke, promote/demote admin, reset password, delete account.
+  - SMTP configuration (host, port, STARTTLS/SSL, credentials) stored encrypted in DB; test-send from the panel.
+  - Audit log — every admin action (approve, delete, password reset, …) is recorded with actor, target, before/after snapshot, and timestamp.
+  - Login-attempt log — failed login attempts with IP, email, and timestamp for brute-force visibility.
+  - Service restart.
 - **Auto-generated weekly plans.** APScheduler runs every Sunday 19:00.
 - **Single-user, multi-user-ready.** `user_id` is on every table.
-  Auth is real JWT with bcrypt; users can self-register.
+  Auth is real JWT with bcrypt; users can self-register. New registrations
+  trigger an email to the user ("pending approval") and a notification to all
+  admins; activation triggers a welcome email. Rate limiting (configurable
+  window + max attempts) guards the login endpoint against brute force.
+- **Email notifications.** SMTP config lives in the DB (admin-managed,
+  password Fernet-encrypted). Emails fire on: registration pending, account
+  approved, and test-send from the admin panel. No restart needed after
+  config changes.
 
 ## Stack
 
@@ -336,7 +348,17 @@ MAX_UPLOAD_BYTES=26214400   # 25 MB
 
 TIMEZONE=Europe/Zurich
 SCHEDULER_USER_ID=00000000-0000-0000-0000-000000000001
+
+# Auth rate limiting
+AUTH_RATE_LIMIT_BACKEND=memory     # "memory" (single process) or "redis"
+AUTH_RATE_LIMIT_MAX_ATTEMPTS=10
+AUTH_RATE_LIMIT_WINDOW_SECONDS=300
+# AUTH_RATE_LIMIT_REDIS_URL=redis://localhost:6379/0  # required when backend=redis
 ```
+
+> **SMTP:** configured at runtime via Admin → SMTP (no env vars needed). The
+> password is Fernet-encrypted before storing in the DB.  All email sends are
+> fire-and-forget; failures are logged but don't block the request.
 
 **Spending caps:** set hard monthly limits in the Anthropic and OpenAI
 consoles before exposing the service. Recommended: $10/month while
@@ -382,8 +404,17 @@ local storage. API clients pass the token as `Authorization: Bearer <token>`.
 | DELETE | `/profile/account` | GDPR Art. 17 erasure (requires password + email confirm) |
 | GET  | `/admin/users` | list all users (admin only) |
 | PATCH | `/admin/users/{id}` | approve / set admin flag (admin only) |
+| POST | `/admin/users/{id}/password` | reset a user's password (admin only) |
+| DELETE | `/admin/users/{id}` | delete user + all data (admin only) |
+| GET  | `/admin/audit` | admin action audit log (admin only) |
+| GET  | `/admin/login-attempts` | failed login log (admin only) |
+| GET  | `/admin/smtp` | read SMTP config (admin only) |
+| PUT  | `/admin/smtp` | update SMTP config (admin only) |
+| POST | `/admin/smtp/test` | send a test email (admin only) |
 | GET  | `/admin/db-config` | read current DB connection string (admin only) |
+| POST | `/admin/db-config/test` | test DB connection without applying (admin only) |
 | PUT  | `/admin/db-config` | update DB URL + test + restart (admin only) |
+| POST | `/admin/restart` | restart the service (admin only) |
 | GET  | `/healthz` | liveness probe |
 
 ## Smoke testing
@@ -539,12 +570,19 @@ through the same endpoints.
       custom roles; per-role color + icon; hero dashboard card with icon-grid
       role switcher, description, challenge-level dots
 - [x] Per-user local LLM overrides (base URL + model, stored in DB)
-- [x] Admin panel — live Postgres connection editor, user management, service restart
+- [x] Admin panel — live Postgres connection editor, user management (approve/delete/password reset), SMTP config, audit log, login-attempt log, service restart
 - [x] Markdown rendering in agent messages (headings, bold/italic, code blocks,
       lists, inline code, links)
 - [x] Coach-colored message avatars (distinct color per specialist)
-- [x] Premium UI redesign — Instrument Sans body font, frosted glass topbar,
-      10 px rounded corners, gradient buttons, ambient glow backgrounds
+- [x] Athletic terminal UI redesign — Bebas Neue display + Instrument Sans body +
+      JetBrains Mono data labels; dark high-contrast palette with role-color accents
+- [x] Inner Team archetypes — sub-archetype picker per role (e.g. Powerlifter,
+      Endurance) to specialise the active role's coaching style
+- [x] SMTP config in admin panel — host/port/TLS/SSL, encrypted password, test-send;
+      registration pending + activation emails fire automatically
+- [x] Login-attempt tracking + rate limiting (configurable window + max attempts)
+- [x] Admin audit log + login-attempt log (actor, IP, before/after snapshot)
+- [x] Registration / activation emails; admin notified on new signups
 - [ ] Open Food Facts / USDA FDC nutrition lookup tools
 - [ ] wger exercise database integration
 - [ ] Garmin Connect ingestion service
